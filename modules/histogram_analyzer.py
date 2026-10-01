@@ -7,7 +7,6 @@ from typing import Dict, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
-from PIL import Image
 
 
 @dataclass

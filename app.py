@@ -3,19 +3,13 @@ ImageGuard - Digital Image Forensics & Tampering Analysis Dashboard
 Main Streamlit Application
 """
 
-import io
 import os
-import matplotlib.pyplot as plt
-import numpy as np
-import plotly.express as px
 import streamlit as st
-from PIL import Image
 
 from config.settings import (
     APP_NAME, APP_SUBTITLE, APP_TAGLINE, APP_VERSION,
     DEFAULT_CANNY_HIGH, DEFAULT_CANNY_LOW, DEFAULT_ELA_QUALITY, DEFAULT_ELA_SCALE,
     DEFAULT_LOWE_RATIO, DEFAULT_NOISE_KERNEL_SIZE, DEFAULT_ORB_NFEATURES,
-    REPORTS_DIR
 )
 from modules.clone_detector import detect_copy_move
 from modules.compression_analyzer import CompressionResult, analyze_compression
@@ -181,28 +175,61 @@ def main():
     hashes = generate_image_hashes(file_bytes)
     sha256_hash = hashes["sha256"]
 
+    analysis_errors = {}
+
+    def run_module(module_name, operation):
+        try:
+            return operation()
+        except Exception as error:
+            analysis_errors[module_name] = str(error) or "Unexpected analysis error."
+            return None
+
     # Run Analysis Engine Modules
     with st.spinner("Analyzing image across forensic modules..."):
-        meta_res = analyze_metadata(file_bytes, filename)
-        ela_res = perform_ela(pil_img, quality=DEFAULT_ELA_QUALITY, scale=DEFAULT_ELA_SCALE, is_jpeg=meta_res.file_format.upper() in ["JPEG", "JPG"])
-        noise_res = analyze_noise(cv2_proc, kernel_size=DEFAULT_NOISE_KERNEL_SIZE)
-        clone_res = detect_copy_move(cv2_proc, nfeatures=DEFAULT_ORB_NFEATURES, ratio_thresh=DEFAULT_LOWE_RATIO)
-        comp_res = analyze_compression(file_bytes, cv2_proc, meta_res.file_format)
-        hist_res = analyze_histograms(cv2_proc)
-        edge_res = detect_edges(cv2_proc, low_threshold=DEFAULT_CANNY_LOW, high_threshold=DEFAULT_CANNY_HIGH)
-        evidence_sum = aggregate_evidence(meta_res, ela_res, noise_res, clone_res, comp_res)
+        meta_res = run_module("Metadata analysis", lambda: analyze_metadata(file_bytes, filename))
+        image_format = meta_res.file_format if meta_res else filename.rsplit(".", 1)[-1].upper()
+        is_jpeg = image_format.upper() in ["JPEG", "JPG"]
+        ela_res = run_module(
+            "Error Level Analysis",
+            lambda: perform_ela(pil_img, quality=DEFAULT_ELA_QUALITY, scale=DEFAULT_ELA_SCALE, is_jpeg=is_jpeg),
+        )
+        noise_res = run_module("Noise residual analysis", lambda: analyze_noise(cv2_proc, kernel_size=DEFAULT_NOISE_KERNEL_SIZE))
+        clone_res = run_module(
+            "Copy-move detection",
+            lambda: detect_copy_move(cv2_proc, nfeatures=DEFAULT_ORB_NFEATURES, ratio_thresh=DEFAULT_LOWE_RATIO),
+        )
+        comp_res = run_module("Compression analysis", lambda: analyze_compression(file_bytes, cv2_proc, image_format))
+        hist_res = run_module("Histogram analysis", lambda: analyze_histograms(cv2_proc))
+        edge_res = run_module(
+            "Canny edge analysis",
+            lambda: detect_edges(cv2_proc, low_threshold=DEFAULT_CANNY_LOW, high_threshold=DEFAULT_CANNY_HIGH),
+        )
+
+        required_evidence = (meta_res, ela_res, noise_res, clone_res, comp_res)
+        evidence_sum = (
+            run_module(
+                "Consolidated evidence analysis",
+                lambda: aggregate_evidence(meta_res, ela_res, noise_res, clone_res, comp_res),
+            )
+            if all(result is not None for result in required_evidence)
+            else None
+        )
+
+    for module_name, message in analysis_errors.items():
+        st.warning(f"{module_name} could not be completed: {message[:240]}")
 
     # Metrics Summary Bar
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Resolution", meta_res.dimensions)
+    m1.metric("Resolution", meta_res.dimensions if meta_res else "Unavailable")
     m2.metric("File Size", format_file_size(len(file_bytes)))
-    m3.metric("EXIF Status", "Available" if meta_res.has_exif else "Absent")
-    m4.metric("Software Tag", meta_res.software[:15] if meta_res.software != "N/A" else "Clean")
+    m3.metric("EXIF Status", "Unavailable" if meta_res is None else "Available" if meta_res.has_exif else "Absent")
+    m4.metric("Software Tag", "Unavailable" if meta_res is None else meta_res.software[:15] if meta_res.software != "N/A" else "Clean")
     
     badge_html = (
-        f'<span class="badge-low">LOW</span>' if evidence_sum.indicator_level == "LOW"
-        else f'<span class="badge-mod">MODERATE</span>' if evidence_sum.indicator_level == "MODERATE"
-        else f'<span class="badge-high">HIGH</span>'
+        '<span class="badge-low">LOW</span>' if evidence_sum and evidence_sum.indicator_level == "LOW"
+        else '<span class="badge-mod">MODERATE</span>' if evidence_sum and evidence_sum.indicator_level == "MODERATE"
+        else '<span class="badge-high">HIGH</span>' if evidence_sum
+        else '<span class="badge-mod">UNAVAILABLE</span>'
     )
     m5.markdown(f"**Indicator Level**<br>{badge_html}", unsafe_allow_html=True)
 
@@ -230,9 +257,15 @@ def main():
     elif nav_option == "📐 Canny Edge Analysis":
         render_edge(cv2_proc)
     elif nav_option == "⚖️ Consolidated Evidence Engine":
-        render_evidence(evidence_sum)
+        if evidence_sum:
+            render_evidence(evidence_sum)
+        else:
+            st.warning("A consolidated indicator cannot be calculated because one or more required analyses failed.")
     elif nav_option == "📄 Generate PDF Forensic Report":
-        render_report(st.session_state.case_id, filename, sha256_hash, meta_res, ela_res, noise_res, edge_res, clone_res, comp_res, evidence_sum, hist_res)
+        if all(result is not None for result in (meta_res, ela_res, noise_res, edge_res, clone_res, comp_res, evidence_sum)):
+            render_report(st.session_state.case_id, filename, sha256_hash, meta_res, ela_res, noise_res, edge_res, clone_res, comp_res, evidence_sum, hist_res)
+        else:
+            st.warning("A complete PDF report is unavailable because one or more required analyses failed.")
     elif nav_option == "📖 Academic Project & About":
         render_about()
 
@@ -245,8 +278,11 @@ def render_overview(pil_img, filename, hashes, meta_res, evidence_sum):
         st.image(pil_img, caption=f"Original File: {filename}", width="stretch")
     with col2:
         st.markdown("### Forensic Findings Summary")
-        st.info(f"**Indicator Level:** {evidence_sum.indicator_level}")
-        st.write(evidence_sum.overall_interpretation)
+        if evidence_sum:
+            st.info(f"**Indicator Level:** {evidence_sum.indicator_level}")
+            st.write(evidence_sum.overall_interpretation)
+        else:
+            st.warning("The consolidated indicator is unavailable because one or more required analyses failed.")
         
         st.markdown("### Cryptographic Hashes")
         st.code(f"SHA-256: {hashes['sha256']}\nMD5:    {hashes['md5']}", language="text")
@@ -254,6 +290,9 @@ def render_overview(pil_img, filename, hashes, meta_res, evidence_sum):
 
 def render_metadata(meta_res: MetadataResult):
     st.subheader("Metadata & EXIF Analysis")
+    if meta_res is None:
+        st.error("Metadata analysis could not be completed for this image.")
+        return
     col1, col2 = st.columns([1, 1])
     with col1:
         st.write("**Technical Image Properties**")
@@ -289,7 +328,12 @@ def render_ela(pil_img, meta_res):
     quality = col_param1.slider("JPEG Compression Quality", 50, 99, DEFAULT_ELA_QUALITY)
     scale = col_param2.slider("Brightness Amplification Scale", 5, 30, DEFAULT_ELA_SCALE)
 
-    ela_res = perform_ela(pil_img, quality=quality, scale=scale, is_jpeg=meta_res.file_format.upper() in ["JPEG", "JPG"])
+    try:
+        is_jpeg = meta_res is None or meta_res.file_format.upper() in ["JPEG", "JPG"]
+        ela_res = perform_ela(pil_img, quality=quality, scale=scale, is_jpeg=is_jpeg)
+    except Exception as error:
+        st.error(f"ELA could not be calculated: {str(error)[:240]}")
+        return
 
     c1, c2 = st.columns(2)
     c1.image(pil_img, caption="Original Image", width="stretch")
@@ -304,7 +348,11 @@ def render_noise(cv2_proc):
     st.caption("Extracts high-frequency noise map via Gaussian subtraction and evaluates regional noise variance.")
     
     ksize = st.slider("Gaussian Blur Kernel Size", 3, 15, DEFAULT_NOISE_KERNEL_SIZE, step=2)
-    noise_res = analyze_noise(cv2_proc, kernel_size=ksize)
+    try:
+        noise_res = analyze_noise(cv2_proc, kernel_size=ksize)
+    except Exception as error:
+        st.error(f"Noise residual analysis could not be completed: {str(error)[:240]}")
+        return
 
     c1, c2 = st.columns(2)
     c1.image(cv2_to_pil(cv2_proc), caption="Original Working Image", width="stretch")
@@ -323,7 +371,11 @@ def render_clone(cv2_proc):
     nfeatures = c_p1.slider("ORB Max Features", 500, 5000, DEFAULT_ORB_NFEATURES, step=500)
     ratio_thresh = c_p2.slider("Lowe's Distance Ratio Threshold", 0.5, 0.9, DEFAULT_LOWE_RATIO, step=0.05)
 
-    clone_res = detect_copy_move(cv2_proc, nfeatures=nfeatures, ratio_thresh=ratio_thresh)
+    try:
+        clone_res = detect_copy_move(cv2_proc, nfeatures=nfeatures, ratio_thresh=ratio_thresh)
+    except Exception as error:
+        st.error(f"Copy-move detection could not be completed: {str(error)[:240]}")
+        return
 
     st.image(clone_res.visualization_pil, caption=f"Copy-Move Matches Visualization (Matches: {clone_res.matched_pairs_count}, RANSAC Inliers: {clone_res.ransac_inliers_count})", width="stretch")
     
@@ -335,6 +387,9 @@ def render_clone(cv2_proc):
 
 def render_compression(comp_res: CompressionResult):
     st.subheader("Compression Artifact Analysis")
+    if comp_res is None:
+        st.error("Compression analysis could not be completed for this image.")
+        return
     st.write(f"**Image Format:** `{comp_res.image_format}`")
     st.write(f"**Estimated JPEG Quality:** `{comp_res.estimated_jpeg_quality if comp_res.estimated_jpeg_quality else 'N/A'}`")
     st.write(f"**8x8 Grid Blockiness Score:** `{comp_res.blockiness_score}`")
@@ -343,6 +398,9 @@ def render_compression(comp_res: CompressionResult):
 
 def render_histograms(hist_res):
     st.subheader("Image Intensity Histograms")
+    if hist_res is None:
+        st.error("Histogram analysis could not be completed for this image.")
+        return
     st.pyplot(hist_res.histogram_figure)
     st.info(hist_res.summary_notes)
 
@@ -353,7 +411,11 @@ def render_edge(cv2_proc):
     low_thresh = c1.slider("Canny Low Threshold", 10, 150, DEFAULT_CANNY_LOW)
     high_thresh = c2.slider("Canny High Threshold", 100, 300, DEFAULT_CANNY_HIGH)
 
-    edge_res = detect_edges(cv2_proc, low_threshold=low_thresh, high_threshold=high_thresh)
+    try:
+        edge_res = detect_edges(cv2_proc, low_threshold=low_thresh, high_threshold=high_thresh)
+    except Exception as error:
+        st.error(f"Canny edge analysis could not be completed: {str(error)[:240]}")
+        return
     
     col1, col2 = st.columns(2)
     col1.image(cv2_to_pil(cv2_proc), caption="Original Image", width="stretch")

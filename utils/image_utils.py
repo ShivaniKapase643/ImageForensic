@@ -3,7 +3,7 @@ ImageGuard - Image Conversion & Utility Functions
 """
 
 import io
-from typing import Tuple, Union
+from typing import Tuple
 import cv2
 import numpy as np
 from PIL import Image

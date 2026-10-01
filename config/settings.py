@@ -2,7 +2,6 @@
 ImageGuard - Configuration and Global Settings
 """
 
-import os
 from pathlib import Path
 
 # Base Paths
@@ -12,8 +11,8 @@ SAMPLE_IMAGES_DIR = ASSETS_DIR / "sample_images"
 REPORTS_DIR = BASE_DIR / "reports"
 
 # Ensure essential directories exist
-os.makedirs(SAMPLE_IMAGES_DIR, exist_ok=True)
-os.makedirs(REPORTS_DIR, exist_ok=True)
+SAMPLE_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Application Information
 APP_NAME = "ImageGuard"
@@ -24,6 +23,7 @@ APP_VERSION = "1.0.0"
 # File Upload Settings
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "tiff", "tif"}
 MAX_FILE_SIZE_MB = 25
+MAX_IMAGE_PIXELS = 20_000_000
 MAX_IMAGE_DIMENSION = 2000  # Max width/height for heavy processing copy
 
 # ELA Default Settings

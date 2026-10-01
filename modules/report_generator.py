@@ -3,9 +3,10 @@ ImageGuard - PDF Forensic Report Generator Module (ReportLab)
 """
 
 import io
-import os
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Optional
 from PIL import Image
+from xml.sax.saxutils import escape
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -13,7 +14,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, KeepTogether, HRFlowable
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 from config.settings import REPORTS_DIR
 from modules.clone_detector import CloneResult
@@ -23,7 +24,7 @@ from modules.ela_analyzer import ELAResult
 from modules.evidence_engine import EvidenceSummary
 from modules.metadata_analyzer import MetadataResult
 from modules.noise_analyzer import NoiseResult
-from utils.formatting import get_current_timestamp
+from utils.formatting import get_current_timestamp, sanitize_filename
 
 
 def generate_pdf_report(
@@ -47,11 +48,13 @@ def generate_pdf_report(
         Absolute path to generated PDF report.
     """
     if output_path is None:
-        output_filename = f"Forensic_Report_{case_id}_{filename}.pdf".replace(" ", "_")
-        output_path = os.path.join(REPORTS_DIR, output_filename)
+        safe_filename = sanitize_filename(filename)[:120].replace(" ", "_")
+        output_path = REPORTS_DIR / f"Forensic_Report_{case_id}_{safe_filename}.pdf"
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     doc = SimpleDocTemplate(
-        output_path,
+        str(output_path),
         pagesize=letter,
         rightMargin=36,
         leftMargin=36,
@@ -124,7 +127,7 @@ def generate_pdf_report(
 
     header_data = [
         [Paragraph("<b>Case ID:</b>", body_style), Paragraph(case_id, body_style), Paragraph("<b>Analysis Timestamp:</b>", body_style), Paragraph(get_current_timestamp(), body_style)],
-        [Paragraph("<b>Target Filename:</b>", body_style), Paragraph(filename, body_style), Paragraph("<b>Image Format / Mode:</b>", body_style), Paragraph(f"{metadata_res.file_format} ({metadata_res.color_mode})", body_style)],
+        [Paragraph("<b>Target Filename:</b>", body_style), Paragraph(escape(filename), body_style), Paragraph("<b>Image Format / Mode:</b>", body_style), Paragraph(escape(f"{metadata_res.file_format} ({metadata_res.color_mode})"), body_style)],
         [Paragraph("<b>Dimensions:</b>", body_style), Paragraph(metadata_res.dimensions, body_style), Paragraph("<b>File Hash (SHA-256):</b>", body_style), Paragraph(f"<font size=7>{sha256_hash[:32]}...</font>", body_style)],
     ]
 
@@ -177,34 +180,24 @@ def generate_pdf_report(
     story.append(evidence_table)
     story.append(Spacer(1, 12))
 
-    # Helper function to convert PIL Image to ReportLab Image
-    def save_temp_img(pil_img: Image.Image, prefix: str) -> str:
-        temp_path = os.path.join(REPORTS_DIR, f"temp_{case_id}_{prefix}.png")
-        pil_img.save(temp_path, format="PNG")
-        return temp_path
+    # Keep report images in memory so report generation needs no persistent scratch files.
+    image_buffers = []
 
-    temp_files = []
+    def report_image(pil_img: Image.Image, width: int = 250, height: int = 180):
+        image_buffer = io.BytesIO()
+        pil_img.save(image_buffer, format="PNG")
+        image_buffer.seek(0)
+        image_buffers.append(image_buffer)
+        return RLImage(image_buffer, width=width, height=height)
 
     # Visual Evidence Panel
     story.append(Paragraph("3. Forensic Visual Evidence", h2_style))
     
-    ela_temp = save_temp_img(ela_res.ela_pil_image, "ela")
-    temp_files.append(ela_temp)
-    
-    noise_temp = save_temp_img(noise_res.noise_map_pil, "noise")
-    temp_files.append(noise_temp)
-
-    clone_temp = save_temp_img(clone_res.visualization_pil, "clone")
-    temp_files.append(clone_temp)
-
-    edge_temp = save_temp_img(edge_res.edge_map_pil, "edge")
-    temp_files.append(edge_temp)
-
     img_grid_data = [
         [Paragraph("<b>Error Level Analysis (ELA)</b>", body_style), Paragraph("<b>Noise Residual Map</b>", body_style)],
-        [RLImage(ela_temp, width=250, height=180), RLImage(noise_temp, width=250, height=180)],
+        [report_image(ela_res.ela_pil_image), report_image(noise_res.noise_map_pil)],
         [Paragraph("<b>Copy-Move Detection Matches</b>", body_style), Paragraph("<b>Canny Edge Map</b>", body_style)],
-        [RLImage(clone_temp, width=250, height=180), RLImage(edge_temp, width=250, height=180)],
+        [report_image(clone_res.visualization_pil), report_image(edge_res.edge_map_pil)],
     ]
 
     img_table = Table(img_grid_data, colWidths=[270, 270])
@@ -220,10 +213,10 @@ def generate_pdf_report(
     story.append(Paragraph("4. Key Technical Metadata", h2_style))
     meta_table_data = [
         [Paragraph("<b>Property</b>", body_style), Paragraph("<b>Extracted Value</b>", body_style)],
-        [Paragraph("Camera Make", body_style), Paragraph(metadata_res.camera_make, body_style)],
-        [Paragraph("Camera Model", body_style), Paragraph(metadata_res.camera_model, body_style)],
-        [Paragraph("Date / Time Original", body_style), Paragraph(metadata_res.datetime_original, body_style)],
-        [Paragraph("Software Tag", body_style), Paragraph(metadata_res.software, body_style)],
+        [Paragraph("Camera Make", body_style), Paragraph(escape(metadata_res.camera_make), body_style)],
+        [Paragraph("Camera Model", body_style), Paragraph(escape(metadata_res.camera_model), body_style)],
+        [Paragraph("Date / Time Original", body_style), Paragraph(escape(metadata_res.datetime_original), body_style)],
+        [Paragraph("Software Tag", body_style), Paragraph(escape(metadata_res.software), body_style)],
         [Paragraph("Editing Software Flag", body_style), Paragraph("YES" if metadata_res.editing_software_detected else "NO", body_style)],
     ]
     meta_table = Table(meta_table_data, colWidths=[180, 360])
@@ -241,13 +234,4 @@ def generate_pdf_report(
 
     # Build Document
     doc.build(story)
-
-    # Cleanup temporary images
-    for tf in temp_files:
-        try:
-            if os.path.exists(tf):
-                os.remove(tf)
-        except Exception:
-            pass
-
-    return output_path
+    return str(output_path)

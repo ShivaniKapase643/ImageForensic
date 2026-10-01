@@ -35,7 +35,7 @@ All findings are aggregated into a transparent **Analysis Indicator Level** (`LO
 ## 🏗 Project Architecture & Structure
 
 ```
-d:\IMAGEFORENSICS\
+ImageForensic/
 │
 ├── app.py                         # Streamlit Main Workstation & UI Router
 │
@@ -87,10 +87,7 @@ d:\IMAGEFORENSICS\
 
 ## ⚙️ Installation & Running Instructions (Windows Laptop)
 
-### Step 1: Open Terminal / PowerShell in Project Directory
-```powershell
-cd d:\IMAGEFORENSICS
-```
+### Step 1: Open Terminal / PowerShell in the cloned project directory
 
 ### Step 2: Create & Activate Virtual Environment
 ```powershell
@@ -118,7 +115,33 @@ pytest
 streamlit run app.py
 ```
 
-The application will launch automatically in your web browser at `http://localhost:8501`.
+The application will launch automatically in your web browser at `http://localhost:8501` (Streamlit's local default port).
+
+## Deploy on Render
+
+This repository includes a Render Blueprint (`render.yaml`) for a Python web service. It installs the dependencies from `requirements.txt` and starts Streamlit bound to `0.0.0.0` on the `PORT` assigned by Render.
+
+### Deploy with the Blueprint
+
+1. Push this repository to GitHub.
+2. In Render, choose **New → Blueprint** and connect the `ImageForensic` repository.
+3. Review the `imageguard-forensics` web service created from `render.yaml`, then deploy it.
+4. Render builds with `pip install -r requirements.txt` and starts with `python run_streamlit.py`.
+
+The repository's `.python-version` selects Python 3.11.9, matching the local virtual environment. No application secrets or additional environment variables are required; Render supplies `PORT` automatically. The Streamlit upload limit is configured to 25 MB, matching the application validator, and uploads are limited to 20 million decoded pixels to constrain memory use.
+
+### Render limitations
+
+- Free web services can spin down after inactivity and may take time to wake on the next visit.
+- The free service filesystem is ephemeral. Generated PDF reports are available through the app's download button but are not durable server-side storage.
+- Image processing and PDF generation use service memory and CPU. Very large images are rejected, and free instance resource limits can affect processing speed.
+- ExifTool is not required; EXIF extraction uses Pillow and degrades safely when metadata is absent or unreadable.
+
+### Run locally
+
+On Windows, follow the installation steps above and run `streamlit run app.py`. To exercise the Render launcher locally in PowerShell, set `$env:PORT = "18765"` and run `python run_streamlit.py`.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for exact Render settings and troubleshooting.
 
 ---
 
