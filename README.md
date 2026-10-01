@@ -1,0 +1,135 @@
+# ImageGuard – Digital Image Forensics and Tampering Analysis Tool
+
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Framework: Streamlit](https://img.shields.io/badge/Framework-Streamlit-red.svg)](https://streamlit.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+> **Official Tagline:** *Analyze. Investigate. Verify.*  
+> **Subtitle:** *Digital Image Forensics & Tampering Analysis Workstation*
+
+---
+
+## 📌 Project Overview
+
+**ImageGuard** is a lightweight, professional digital image forensics workstation designed for computer vision engineers, digital investigators, and academic researchers. It analyzes digital images using non-destructive metadata extraction, error level analysis (ELA), spatial noise variance, ORB feature copy-move detection, compression artifact inspection, channel histograms, and Canny edge detection.
+
+All findings are aggregated into a transparent **Analysis Indicator Level** (`LOW`, `MODERATE`, `HIGH`) and can be exported as an official PDF report using ReportLab.
+
+---
+
+## 🎯 Key Features
+
+- **Cryptographic File Hash**: Calculates SHA-256 and MD5 checksums to guarantee digital chain-of-custody integrity.
+- **EXIF & Technical Metadata Analysis**: Extracts camera make/model, acquisition date/time, GPS coordinates, exposure parameters, and flags digital editing software signatures (e.g. Photoshop, GIMP, Canva).
+- **Error Level Analysis (ELA)**: Re-compresses JPEG images at controlled quality thresholds to reveal inconsistent re-compression error magnitudes.
+- **Noise Residual Analysis**: Subtractions Gaussian-blurred low-pass images to isolate high-frequency grain and measures spatial noise variance across grid quadrants.
+- **Copy-Move (Clone) Detection**: Uses OpenCV's ORB detector with Lowe's ratio test and RANSAC geometric affine estimation to highlight duplicated image regions.
+- **JPEG Compression & Blockiness Metrics**: Evaluates 8x8 DCT boundary discontinuities and estimates quantization tables.
+- **Grayscale & RGB Channel Histograms**: Computes dynamic range, luminance distribution, and statistical moments (Mean, Median, Std Dev, Min, Max).
+- **Canny Edge Detection**: User-adjustable edge map generation to highlight boundary discontinuities.
+- **Consolidated Evidence Engine**: Applies transparent heuristic rules to derive an overall **Analysis Indicator Level**.
+- **ReportLab PDF Generator**: Compiles executive summaries, metadata tables, forensic visualizations, and legal disclaimers into a downloadable PDF report.
+
+---
+
+## 🏗 Project Architecture & Structure
+
+```
+d:\IMAGEFORENSICS\
+│
+├── app.py                         # Streamlit Main Workstation & UI Router
+│
+├── config/
+│   ├── __init__.py
+│   └── settings.py                # Configuration constants, thresholds, paths & themes
+│
+├── modules/
+│   ├── __init__.py
+│   ├── hash_generator.py          # Cryptographic SHA-256 / MD5 hashing
+│   ├── metadata_analyzer.py      # EXIF parser & editing software detector
+│   ├── ela_analyzer.py           # Error Level Analysis (JPEG re-compression)
+│   ├── noise_analyzer.py         # Noise residual map & spatial variance
+│   ├── histogram_analyzer.py     # Channel histograms & statistical metrics
+│   ├── edge_analyzer.py          # Canny edge detector module
+│   ├── clone_detector.py         # ORB feature-matching copy-move detector
+│   ├── compression_analyzer.py   # JPEG quantization & blockiness metric
+│   ├── evidence_engine.py       # Heuristic evidence engine & score calculator
+│   └── report_generator.py       # ReportLab PDF compiler
+│
+├── utils/
+│   ├── __init__.py
+│   ├── image_utils.py            # Image array conversions & dynamic resizing
+│   ├── validation.py             # File size, mime-type & integrity validation
+│   └── formatting.py             # String, byte size & timestamp formatters
+│
+├── assets/
+│   └── sample_images/            # Synthetic test dataset directory
+│
+├── reports/                      # Output directory for generated PDF reports
+│
+├── tests/                        # Unit test suite (pytest)
+│   ├── test_validation.py
+│   ├── test_hash.py
+│   ├── test_metadata.py
+│   ├── test_ela.py
+│   ├── test_noise.py
+│   ├── test_clone.py
+│   └── test_evidence.py
+│
+├── create_sample_data.py         # Utility script to build synthetic test dataset
+├── requirements.txt              # Dependency specifications
+├── README.md                     # Documentation
+├── LICENSE                       # MIT License
+└── academic_docs.md              # Detailed Academic Project Report
+```
+
+---
+
+## ⚙️ Installation & Running Instructions (Windows Laptop)
+
+### Step 1: Open Terminal / PowerShell in Project Directory
+```powershell
+cd d:\IMAGEFORENSICS
+```
+
+### Step 2: Create & Activate Virtual Environment
+```powershell
+python -m venv venv
+venv\Scripts\activate
+```
+
+### Step 3: Install Required Dependencies
+```powershell
+pip install -r requirements.txt
+```
+
+### Step 4: Generate Demonstration Sample Data
+```powershell
+python create_sample_data.py
+```
+
+### Step 5: Run Automated Unit Test Suite
+```powershell
+pytest
+```
+
+### Step 6: Launch Streamlit Dashboard
+```powershell
+streamlit run app.py
+```
+
+The application will launch automatically in your web browser at `http://localhost:8501`.
+
+---
+
+## 🛡 Academic & Scientific Disclaimer
+
+> **IMPORTANT FORENSIC PRINCIPLE**:  
+> ImageGuard uses non-destructive heuristic indicators to assist human forensic examiners. It **does NOT claim definitive proof** that an image is "real" or "fake".  
+> Forensic techniques can yield false positives (e.g. from camera compression, social media re-saving, repetitive natural textures) and false negatives. Human analyst review is required.
+
+---
+
+## 📜 License
+
+Distributed under the MIT License. See `LICENSE` for details.
